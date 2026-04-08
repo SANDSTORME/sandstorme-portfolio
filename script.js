@@ -1,10 +1,25 @@
 document.documentElement.classList.add("js");
 
+const root = document.documentElement;
 const revealItems = document.querySelectorAll("[data-reveal]");
 const showcase = document.querySelector("[data-showcase]");
 const dockCards = document.querySelectorAll(".dock-card");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const compactShowcase = window.matchMedia("(max-width: 720px)").matches;
+const finePointer = window.matchMedia("(pointer: fine)").matches;
+const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+const lowPowerDevice = Boolean(
+  reduceMotion ||
+  compactShowcase ||
+  !finePointer ||
+  connection?.saveData ||
+  (typeof navigator.deviceMemory === "number" && navigator.deviceMemory <= 4) ||
+  (typeof navigator.hardwareConcurrency === "number" && navigator.hardwareConcurrency <= 4)
+);
+
+if (lowPowerDevice) {
+  root.classList.add("performance-mode");
+}
 
 revealItems.forEach((item, index) => {
   window.setTimeout(() => {
@@ -29,7 +44,7 @@ if (showcase) {
       kicker: "real name",
       label: "origem",
       title: "Eduardo",
-      subtitle: "Lourenço",
+      subtitle: "Louren\u00E7o",
       signature: "storm protocol // origem",
       description: "Nome real primeiro. O resto orbita em volta disso.",
       primaryLabel: "Abrir projeto",
@@ -93,9 +108,11 @@ if (showcase) {
   let loopTimer = 0;
   let swapTimer = 0;
   let shiftTimer = 0;
-  const swapDelay = compactShowcase ? 110 : 180;
-  const shiftDuration = compactShowcase ? 440 : 760;
-  const loopDelay = compactShowcase ? 6800 : 5600;
+  const animateShowcase = !lowPowerDevice;
+  const enablePointerEffects = animateShowcase && finePointer;
+  const swapDelay = compactShowcase ? 90 : 140;
+  const shiftDuration = compactShowcase ? 260 : 420;
+  const loopDelay = 7200;
 
   function applySlide(index) {
     const slide = slides[index];
@@ -130,7 +147,8 @@ if (showcase) {
     window.clearTimeout(shiftTimer);
     activeIndex = index;
 
-    if (immediate) {
+    if (immediate || !animateShowcase) {
+      showcase.classList.remove("is-shifting");
       applySlide(index);
       return;
     }
@@ -147,6 +165,10 @@ if (showcase) {
   }
 
   function startLoop() {
+    if (!animateShowcase) {
+      return;
+    }
+
     window.clearInterval(loopTimer);
     loopTimer = window.setInterval(() => {
       setSlide((activeIndex + 1) % slides.length);
@@ -157,34 +179,51 @@ if (showcase) {
     button.addEventListener("click", () => {
       const index = Number(button.getAttribute("data-showcase-index"));
       setSlide(index);
-      startLoop();
+
+      if (animateShowcase) {
+        startLoop();
+      }
     });
   });
 
-  showcase.addEventListener("pointerenter", () => {
-    window.clearInterval(loopTimer);
-  });
+  if (animateShowcase) {
+    showcase.addEventListener("pointerenter", () => {
+      window.clearInterval(loopTimer);
+    });
 
-  showcase.addEventListener("pointerleave", () => {
-    startLoop();
-  });
+    showcase.addEventListener("pointerleave", () => {
+      startLoop();
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        window.clearInterval(loopTimer);
+        return;
+      }
+
+      startLoop();
+    });
+  }
 
   setSlide(0, true);
   startLoop();
 
-  if (!reduceMotion) {
-    showcase.addEventListener("pointermove", event => {
-      const bounds = showcase.getBoundingClientRect();
-      const x = (event.clientX - bounds.left) / bounds.width - 0.5;
-      const y = (event.clientY - bounds.top) / bounds.height - 0.5;
-      const strongX = `${x * 22}px`;
-      const strongY = `${y * 18}px`;
-      const softX = `${x * 12}px`;
-      const softY = `${y * 10}px`;
-      const inverseX = `${x * -10}px`;
-      const inverseY = `${y * -8}px`;
-      const spotX = `${50 + x * 28}%`;
-      const spotY = `${42 + y * 18}%`;
+  if (enablePointerEffects) {
+    let showcaseFrame = 0;
+    let pointerX = 0;
+    let pointerY = 0;
+
+    const renderShowcasePointer = () => {
+      showcaseFrame = 0;
+
+      const strongX = `${pointerX * 22}px`;
+      const strongY = `${pointerY * 18}px`;
+      const softX = `${pointerX * 12}px`;
+      const softY = `${pointerY * 10}px`;
+      const inverseX = `${pointerX * -10}px`;
+      const inverseY = `${pointerY * -8}px`;
+      const spotX = `${50 + pointerX * 28}%`;
+      const spotY = `${42 + pointerY * 18}%`;
 
       showcase.style.setProperty("--parallax-x", strongX);
       showcase.style.setProperty("--parallax-y", strongY);
@@ -194,9 +233,24 @@ if (showcase) {
       showcase.style.setProperty("--parallax-invert-y", inverseY);
       showcase.style.setProperty("--spot-x", spotX);
       showcase.style.setProperty("--spot-y", spotY);
+    };
+
+    showcase.addEventListener("pointermove", event => {
+      const bounds = showcase.getBoundingClientRect();
+      pointerX = (event.clientX - bounds.left) / bounds.width - 0.5;
+      pointerY = (event.clientY - bounds.top) / bounds.height - 0.5;
+
+      if (!showcaseFrame) {
+        showcaseFrame = window.requestAnimationFrame(renderShowcasePointer);
+      }
     });
 
     showcase.addEventListener("pointerleave", () => {
+      if (showcaseFrame) {
+        window.cancelAnimationFrame(showcaseFrame);
+        showcaseFrame = 0;
+      }
+
       showcase.style.setProperty("--parallax-x", "0px");
       showcase.style.setProperty("--parallax-y", "0px");
       showcase.style.setProperty("--parallax-soft-x", "0px");
@@ -209,18 +263,34 @@ if (showcase) {
   }
 }
 
-if (!reduceMotion) {
+if (!lowPowerDevice && finePointer) {
   dockCards.forEach(card => {
+    let dockFrame = 0;
+    let glowX = 50;
+    let glowY = 50;
+
+    const renderDockPointer = () => {
+      dockFrame = 0;
+      card.style.setProperty("--glow-x", `${glowX}%`);
+      card.style.setProperty("--glow-y", `${glowY}%`);
+    };
+
     card.addEventListener("pointermove", event => {
       const bounds = card.getBoundingClientRect();
-      const x = ((event.clientX - bounds.left) / bounds.width) * 100;
-      const y = ((event.clientY - bounds.top) / bounds.height) * 100;
+      glowX = ((event.clientX - bounds.left) / bounds.width) * 100;
+      glowY = ((event.clientY - bounds.top) / bounds.height) * 100;
 
-      card.style.setProperty("--glow-x", `${x}%`);
-      card.style.setProperty("--glow-y", `${y}%`);
+      if (!dockFrame) {
+        dockFrame = window.requestAnimationFrame(renderDockPointer);
+      }
     });
 
     card.addEventListener("pointerleave", () => {
+      if (dockFrame) {
+        window.cancelAnimationFrame(dockFrame);
+        dockFrame = 0;
+      }
+
       card.style.setProperty("--glow-x", "50%");
       card.style.setProperty("--glow-y", "50%");
     });
